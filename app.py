@@ -43,16 +43,15 @@ from auth import (
 # ==================================================
 
 def render_alarm_sound():
-    """Render a repeating alarm sound in the browser."""
+    """Render a loud repeating medicine alarm with a manual fallback button."""
     sample_rate = 44100
-    duration = 0.6
+    duration = 0.8
     frames = []
 
     for i in range(int(sample_rate * duration)):
         t = i / sample_rate
-        # Two-tone beep for a clear reminder sound
-        frequency = 880 if int(t * 4) % 2 == 0 else 660
-        value = int(15000 * math.sin(2 * math.pi * frequency * t))
+        frequency = 1000 if int(t * 3) % 2 == 0 else 650
+        value = int(22000 * math.sin(2 * math.pi * frequency * t))
         frames.append(value)
 
     buffer = io.BytesIO()
@@ -60,24 +59,55 @@ def render_alarm_sound():
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
-        wav_file.writeframes(b"".join(int(x).to_bytes(2, byteorder="little", signed=True) for x in frames))
+        wav_file.writeframes(
+            b"".join(
+                int(x).to_bytes(2, byteorder="little", signed=True)
+                for x in frames
+            )
+        )
 
     audio_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
     components.html(
         f"""
-        <audio autoplay loop controls style="width:100%;">
-            <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
-        </audio>
+        <div style="font-family:Arial,sans-serif;">
+            <audio id="medicineAlarm" loop controls autoplay
+                   style="width:100%;">
+                <source src="data:audio/wav;base64,{audio_b64}"
+                        type="audio/wav">
+                Your browser does not support audio.
+            </audio>
+
+            <button id="playAlarm"
+                    style="background:#dc2626;color:white;border:0;
+                           padding:14px 20px;border-radius:8px;
+                           font-size:18px;font-weight:bold;
+                           cursor:pointer;width:100%;margin-top:8px;">
+                🔊 PLAY MEDICINE ALARM
+            </button>
+
+            <p style="color:#b45309;font-size:13px;margin-top:8px;">
+                If there is no sound, click the button above and increase your
+                computer/browser volume.
+            </p>
+        </div>
+
         <script>
-            const audio = document.querySelector('audio');
+            const audio = document.getElementById("medicineAlarm");
+            const button = document.getElementById("playAlarm");
             audio.volume = 1.0;
-            audio.play().catch(() => {{
-                document.body.insertAdjacentHTML('beforeend',
-                    '<p style=\"color:#b45309;font-size:13px;\">Click Play if your browser blocks automatic sound.</p>');
-            }});
+
+            function startAlarm() {{
+                audio.play().catch(function(error) {{
+                    console.log("Browser blocked autoplay:", error);
+                }});
+            }}
+
+            button.addEventListener("click", startAlarm);
+            startAlarm();
         </script>
         """,
-        height=80,
+        height=180,
     )
 
 
