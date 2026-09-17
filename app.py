@@ -234,7 +234,12 @@ if st.sidebar.button("Logout", key="logout_button"):
     st.rerun()
 
 
-user_role = st.session_state.user["role"]
+user_role = str(st.session_state.user.get("role", "Patient")).strip()
+patient_id_for_queries = (
+    st.session_state.user.get("id")
+    if user_role.lower() == "patient"
+    else None
+)
 
 if user_role == "Caregiver":
     navigation_options = [
@@ -246,7 +251,6 @@ if user_role == "Caregiver":
         "Caregiver Dashboard"
     ]
 else:
-    # Patients should not see caregiver-only pages
     navigation_options = [
         "Dashboard",
         "Today's Medicines",
@@ -257,18 +261,17 @@ else:
 
 page = st.sidebar.radio("Navigation", navigation_options)
 
+# Patient accounts can never open the caregiver-only page.
+if page == "Patient & Medicines" and user_role.lower() != "caregiver":
+    st.error("Only caregivers can access Patient & Medicines.")
+    st.stop()
+
 
 # ==================================================
 # MERGED PATIENT ID + PATIENT DETAILS + MEDICINE DETAILS
 # ==================================================
 
 if page == "Patient & Medicines":
-    # Extra permission check in case the page is opened through a stale session
-    # or a previously selected navigation value.
-    if str(st.session_state.user.get("role", "Patient")).strip().lower() != "caregiver":
-        st.error("Only caregivers can access Patient & Medicines.")
-        st.stop()
-
     st.title("💊 Patient & Medicines")
     st.caption("Create/select a Patient ID and save patient details with multiple medicines in one form.")
 
@@ -1083,7 +1086,7 @@ elif page == "Today's Medicines":
 
     st.title("📅 Today's Medicines")
 
-    todays_medicines = get_todays_medicines()
+    todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
 
     if not todays_medicines:
 
@@ -1167,7 +1170,7 @@ elif page == "Medicine Alarm":
     else:
         st.warning("Install streamlit-autorefresh for automatic second-by-second alarm checking: pip install streamlit-autorefresh")
 
-    todays_medicines = get_todays_medicines()
+    todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
     now = datetime.now()
 
     due_medicines = []
@@ -1231,8 +1234,8 @@ elif page == "Medicine Chatbot":
     st.title("🤖 Medicine Chatbot")
     st.caption("Ask questions about your caregiver-created medicine schedule.")
 
-    todays_medicines = get_todays_medicines()
-    history = get_medication_history()
+    todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
+    history = get_medication_history(patient_id=patient_id_for_queries)
 
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = [
@@ -1293,7 +1296,7 @@ elif page == "Medication History":
 
     st.title("📜 Medication History")
 
-    history = get_medication_history()
+    history = get_medication_history(patient_id=patient_id_for_queries)
 
     if not history:
 
