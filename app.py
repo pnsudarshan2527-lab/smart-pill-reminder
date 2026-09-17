@@ -340,28 +340,51 @@ if page == "Patient & Medicines":
             additional_notes = st.text_area("Additional Notes", value=profile.get("additional_notes", ""))
 
         st.header("2. Medicine Details")
+        st.caption("Each medicine can be taken multiple times per day. Set separate AM/PM times for every dose.")
         medicine_count = st.number_input("Number of medicines", min_value=1, max_value=10, value=1, step=1)
         medicines = []
+
         for medicine_number in range(1, int(medicine_count) + 1):
             st.subheader(f"💊 Medicine {medicine_number}")
             m1, m2 = st.columns(2)
             with m1:
                 medicine_name = st.text_input("Medicine Name", key=f"medicine_name_{medicine_number}", placeholder="Example: Paracetamol")
-                dosage = st.text_input("Dosage", key=f"dosage_{medicine_number}", placeholder="Example: 500 mg")
+                dosage = st.text_input("Dosage per dose", key=f"dosage_{medicine_number}", placeholder="Example: 500 mg / 1 tablet")
                 food_instruction = st.selectbox(
                     "Food Instruction",
                     ["After food", "Before food", "With food", "Empty stomach", "With water", "Anytime"],
                     key=f"food_instruction_{medicine_number}"
                 )
-            with m2:
                 start_date = st.date_input("Start Date", value=date.today(), key=f"start_date_{medicine_number}")
                 end_date = st.date_input("End Date", value=date.today(), key=f"end_date_{medicine_number}")
-                hour = st.selectbox("Hour", list(range(1, 13)), index=7, key=f"hour_{medicine_number}")
-                minute = st.selectbox("Minute", list(range(0, 60)), format_func=lambda x: f"{x:02d}", key=f"minute_{medicine_number}")
-                period = st.selectbox("AM / PM", ["AM", "PM"], key=f"period_{medicine_number}")
-                converted_hour = 0 if hour == 12 and period == "AM" else (12 if hour == 12 and period == "PM" else (hour + 12 if period == "PM" else hour))
-                dose_time = time(converted_hour, minute)
-            medicines.append({"medicine_name": medicine_name, "dosage": dosage, "start_date": start_date, "end_date": end_date, "time": dose_time, "food_instruction": food_instruction})
+
+            with m2:
+                dose_count = st.number_input(
+                    f"How many times per day? — Medicine {medicine_number}",
+                    min_value=1, max_value=8, value=1, step=1,
+                    key=f"dose_count_{medicine_number}"
+                )
+                doses = []
+                for dose_number in range(1, int(dose_count) + 1):
+                    st.markdown(f"**Dose {dose_number} time**")
+                    tc1, tc2, tc3 = st.columns(3)
+                    with tc1:
+                        selected_hour = st.selectbox("Hour", list(range(1, 13)), index=7, key=f"hour_{medicine_number}_{dose_number}")
+                    with tc2:
+                        selected_minute = st.selectbox("Minute", list(range(0, 60)), format_func=lambda x: f"{x:02d}", key=f"minute_{medicine_number}_{dose_number}")
+                    with tc3:
+                        period = st.selectbox("AM / PM", ["AM", "PM"], key=f"period_{medicine_number}_{dose_number}")
+                    converted_hour = 0 if selected_hour == 12 and period == "AM" else (12 if selected_hour == 12 and period == "PM" else (selected_hour + 12 if period == "PM" else selected_hour))
+                    doses.append(time(converted_hour, selected_minute))
+
+            medicines.append({
+                "medicine_name": medicine_name,
+                "dosage": dosage,
+                "start_date": start_date,
+                "end_date": end_date,
+                "doses": doses,
+                "food_instruction": food_instruction
+            })
 
         submitted = st.form_submit_button("💾 Save Patient + All Medicines", type="primary")
 
@@ -383,18 +406,20 @@ if page == "Patient & Medicines":
             for medicine in medicines:
                 current_date = medicine["start_date"]
                 while current_date <= medicine["end_date"]:
-                    schedule.append({
-                        "medicine_name": medicine["medicine_name"].strip(),
-                        "dosage": medicine["dosage"].strip(),
-                        "date": current_date,
-                        "time": medicine["time"],
-                        "food_instruction": medicine["food_instruction"],
-                        "status": "Pending",
-                        "patient_user_id": selected_patient_id
-                    })
+                    for dose_time in medicine["doses"]:
+                        schedule.append({
+                            "medicine_name": medicine["medicine_name"].strip(),
+                            "dosage": medicine["dosage"].strip(),
+                            "date": current_date,
+                            "time": dose_time,
+                            "food_instruction": medicine["food_instruction"],
+                            "status": "Pending",
+                            "patient_user_id": selected_patient_id
+                        })
                     current_date = current_date.fromordinal(current_date.toordinal() + 1)
             if save_schedule(schedule):
-                st.success(f"Saved patient details and {len(medicines)} medicine(s) for PAT-{selected_patient_id:05d}.")
+                total_doses = sum(len(m["doses"]) for m in medicines)
+                st.success(f"Saved patient details and {len(medicines)} medicine(s) with {total_doses} daily dose time(s) for PAT-{selected_patient_id:05d}.")
             else:
                 st.warning("Patient details saved, but this medicine schedule already exists.")
 
