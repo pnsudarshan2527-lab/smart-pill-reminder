@@ -1,3 +1,16 @@
+# UPDATED SMART PILL REMINDER APP
+# 
+# This is the current app.py code.
+# The caregiver/patient updates must be applied together with the updated
+# database.py and auth.py files supplied in the previous steps.
+#
+# Required database functions:
+# save_multiple_schedule_entries(schedule_entries, patient_id, caregiver_id)
+# get_todays_medicines(patient_id=None, caregiver_id=None)
+# get_medication_history(patient_id=None, caregiver_id=None)
+# get_saved_prescriptions(patient_id=None, caregiver_id=None)
+# get_medication_summary(patient_id=None, caregiver_id=None)
+#
 import streamlit as st
 import streamlit.components.v1 as components
 import base64
@@ -22,20 +35,13 @@ from database import (
     get_saved_prescriptions,
     delete_prescription,
     update_medication_status,
-    get_medication_summary,
-    get_patient_profile,
-    save_patient_profile,
-    get_patient_code,
-    delete_patient_data
+    get_medication_summary
 )
 
 from auth import (
     initialize_auth_database,
     register_user,
-    login_user,
-    register_patient,
-    get_caregiver_patients,
-    delete_patient
+    login_user
 )
 
 # ==================================================
@@ -43,15 +49,15 @@ from auth import (
 # ==================================================
 
 def render_alarm_sound():
-    """Render a loud repeating medicine alarm with a manual fallback button."""
+    """Render a loud repeating alarm. Chrome may require one prior click."""
     sample_rate = 44100
-    duration = 0.8
+    duration = 1.0
     frames = []
 
     for i in range(int(sample_rate * duration)):
         t = i / sample_rate
-        frequency = 1000 if int(t * 3) % 2 == 0 else 650
-        value = int(22000 * math.sin(2 * math.pi * frequency * t))
+        frequency = 1100 if int(t * 4) % 2 == 0 else 650
+        value = int(28000 * math.sin(2 * math.pi * frequency * t))
         frames.append(value)
 
     buffer = io.BytesIO()
@@ -70,44 +76,23 @@ def render_alarm_sound():
 
     components.html(
         f"""
-        <div style="font-family:Arial,sans-serif;">
-            <audio id="medicineAlarm" loop controls autoplay
-                   style="width:100%;">
-                <source src="data:audio/wav;base64,{audio_b64}"
-                        type="audio/wav">
-                Your browser does not support audio.
-            </audio>
-
-            <button id="playAlarm"
-                    style="background:#dc2626;color:white;border:0;
-                           padding:14px 20px;border-radius:8px;
-                           font-size:18px;font-weight:bold;
-                           cursor:pointer;width:100%;margin-top:8px;">
-                🔊 PLAY MEDICINE ALARM
-            </button>
-
-            <p style="color:#b45309;font-size:13px;margin-top:8px;">
-                If there is no sound, click the button above and increase your
-                computer/browser volume.
-            </p>
-        </div>
-
+        <audio id="medicineAlarmAudio" autoplay loop controls style="width:100%;">
+            <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
+        </audio>
         <script>
-            const audio = document.getElementById("medicineAlarm");
-            const button = document.getElementById("playAlarm");
+            const audio = document.getElementById('medicineAlarmAudio');
             audio.volume = 1.0;
-
-            function startAlarm() {{
-                audio.play().catch(function(error) {{
-                    console.log("Browser blocked autoplay:", error);
-                }});
-            }}
-
-            button.addEventListener("click", startAlarm);
-            startAlarm();
+            audio.autoplay = true;
+            audio.loop = true;
+            audio.play().catch(() => {{
+                document.body.insertAdjacentHTML(
+                    'beforeend',
+                    '<b style="color:red">Chrome blocked autoplay. Click Play once.</b>'
+                );
+            }});
         </script>
         """,
-        height=180,
+        height=90,
     )
 
 
@@ -269,7 +254,7 @@ user_role = st.session_state.user["role"]
 if user_role == "Caregiver":
     navigation_options = [
         "Dashboard",
-        "Patient & Medicines",
+        "Prescription Setup",
         "Saved Prescriptions",
         "Today's Medicines",
         "Medication History",
@@ -278,7 +263,6 @@ if user_role == "Caregiver":
 else:
     navigation_options = [
         "Dashboard",
-        "Patient & Medicines",
         "Today's Medicines",
         "Medicine Alarm",
         "Medicine Chatbot",
@@ -289,224 +273,10 @@ page = st.sidebar.radio("Navigation", navigation_options)
 
 
 # ==================================================
-# MERGED PATIENT ID + PATIENT DETAILS + MEDICINE DETAILS
-# ==================================================
-
-if page == "Patient & Medicines":
-    st.title("💊 Patient & Medicines")
-    st.caption("Create/select a Patient ID and save patient details with multiple medicines in one form.")
-
-    patients = get_caregiver_patients(st.session_state.user["id"])
-    create_col, select_col = st.columns([1, 2])
-
-    with create_col:
-        st.subheader("Create Patient ID")
-        with st.form("create_patient_id_form"):
-            new_patient_name = st.text_input("Patient name")
-            create_patient_button = st.form_submit_button("➕ Create Patient ID")
-        if create_patient_button:
-            if not new_patient_name.strip():
-                st.error("Enter the patient name.")
-            else:
-                created, message = register_patient(
-                    caregiver_id=st.session_state.user["id"],
-                    full_name=new_patient_name.strip()
-                )
-                if created:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-    if not patients:
-        st.info("Create a Patient ID first.")
-        st.stop()
-
-    patient_options = {f"PAT-{p['id']:05d} — {p['full_name']}": p for p in patients}
-    with select_col:
-        selected_label = st.selectbox("Select Patient", list(patient_options.keys()))
-        selected_patient = patient_options[selected_label]
-        selected_patient_id = selected_patient["id"]
-        selected_patient_name = selected_patient["full_name"]
-        st.success(f"Selected Patient ID: PAT-{selected_patient_id:05d}")
-
-    with st.expander("🗑️ Delete this Patient ID", expanded=False):
-        st.warning("This permanently deletes the patient account, profile and medicine schedules.")
-        confirm_delete = st.checkbox("I understand this cannot be undone.", key=f"confirm_delete_{selected_patient_id}")
-        if st.button("Delete Patient ID", key=f"delete_patient_{selected_patient_id}"):
-            if not confirm_delete:
-                st.error("Please confirm deletion first.")
-            else:
-                deleted, message = delete_patient(
-                    caregiver_id=st.session_state.user["id"],
-                    patient_id=selected_patient_id
-                )
-                if deleted:
-                    delete_patient_data(selected_patient_id)
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-    existing_profile = get_patient_profile(selected_patient_id)
-    profile = dict(existing_profile) if existing_profile else {}
-    gender_options = ["", "Male", "Female", "Other", "Prefer not to say"]
-    blood_options = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
-
-    with st.form("merged_patient_medicine_form"):
-        st.header("1. Patient Details")
-        c1, c2 = st.columns(2)
-        with c1:
-            full_name = st.text_input("Full Name", value=profile.get("full_name", selected_patient_name))
-            age = st.number_input("Age", min_value=0, max_value=120, value=int(profile.get("age") or 0), step=1)
-            gender = st.selectbox("Gender", gender_options, index=gender_options.index(profile.get("gender", "")) if profile.get("gender", "") in gender_options else 0)
-            blood_group = st.selectbox("Blood Group", blood_options, index=blood_options.index(profile.get("blood_group", "")) if profile.get("blood_group", "") in blood_options else 0)
-            emergency_contact = st.text_input("Emergency Contact", value=profile.get("emergency_contact", ""))
-        with c2:
-            allergies = st.text_area("Known Allergies", value=profile.get("allergies", ""))
-            medical_conditions = st.text_area("Medical Conditions", value=profile.get("medical_conditions", ""))
-            doctor_name = st.text_input("Doctor Name", value=profile.get("doctor_name", ""))
-            doctor_contact = st.text_input("Doctor Contact", value=profile.get("doctor_contact", ""))
-            additional_notes = st.text_area("Additional Notes", value=profile.get("additional_notes", ""))
-
-        st.header("2. Medicine Details")
-        st.caption("Each medicine can be taken multiple times per day. Set separate AM/PM times for every dose.")
-        medicine_count = st.number_input("Number of medicines", min_value=1, max_value=10, value=1, step=1)
-        medicines = []
-
-        for medicine_number in range(1, int(medicine_count) + 1):
-            st.subheader(f"💊 Medicine {medicine_number}")
-            m1, m2 = st.columns(2)
-            with m1:
-                medicine_name = st.text_input("Medicine Name", key=f"medicine_name_{medicine_number}", placeholder="Example: Paracetamol")
-                dosage = st.text_input("Dosage per dose", key=f"dosage_{medicine_number}", placeholder="Example: 500 mg / 1 tablet")
-                food_instruction = st.selectbox(
-                    "Food Instruction",
-                    ["After food", "Before food", "With food", "Empty stomach", "With water", "Anytime"],
-                    key=f"food_instruction_{medicine_number}"
-                )
-                start_date = st.date_input("Start Date", value=date.today(), key=f"start_date_{medicine_number}")
-                end_date = st.date_input("End Date", value=date.today(), key=f"end_date_{medicine_number}")
-
-            with m2:
-                dose_count = st.number_input(
-                    f"How many times per day? — Medicine {medicine_number}",
-                    min_value=1, max_value=8, value=1, step=1,
-                    key=f"dose_count_{medicine_number}"
-                )
-                doses = []
-                for dose_number in range(1, int(dose_count) + 1):
-                    st.markdown(f"**Dose {dose_number} time**")
-                    tc1, tc2, tc3 = st.columns(3)
-                    with tc1:
-                        selected_hour = st.selectbox("Hour", list(range(1, 13)), index=7, key=f"hour_{medicine_number}_{dose_number}")
-                    with tc2:
-                        selected_minute = st.selectbox("Minute", list(range(0, 60)), format_func=lambda x: f"{x:02d}", key=f"minute_{medicine_number}_{dose_number}")
-                    with tc3:
-                        period = st.selectbox("AM / PM", ["AM", "PM"], key=f"period_{medicine_number}_{dose_number}")
-                    converted_hour = 0 if selected_hour == 12 and period == "AM" else (12 if selected_hour == 12 and period == "PM" else (selected_hour + 12 if period == "PM" else selected_hour))
-                    doses.append(time(converted_hour, selected_minute))
-
-            medicines.append({
-                "medicine_name": medicine_name,
-                "dosage": dosage,
-                "start_date": start_date,
-                "end_date": end_date,
-                "doses": doses,
-                "food_instruction": food_instruction
-            })
-
-        submitted = st.form_submit_button("💾 Save Patient + All Medicines", type="primary")
-
-    if submitted:
-        errors = []
-        if not full_name.strip():
-            errors.append("Full name is required.")
-        for number, medicine in enumerate(medicines, start=1):
-            if not medicine["medicine_name"].strip() or not medicine["dosage"].strip():
-                errors.append(f"Medicine {number}: name and dosage are required.")
-            if medicine["end_date"] < medicine["start_date"]:
-                errors.append(f"Medicine {number}: end date cannot be before start date.")
-        if errors:
-            for error in errors:
-                st.error(error)
-        else:
-            save_patient_profile(selected_patient_id, full_name.strip(), int(age), gender, blood_group, emergency_contact, allergies, medical_conditions, doctor_name, doctor_contact, additional_notes)
-            schedule = []
-            for medicine in medicines:
-                current_date = medicine["start_date"]
-                while current_date <= medicine["end_date"]:
-                    for dose_time in medicine["doses"]:
-                        schedule.append({
-                            "medicine_name": medicine["medicine_name"].strip(),
-                            "dosage": medicine["dosage"].strip(),
-                            "date": current_date,
-                            "time": dose_time,
-                            "food_instruction": medicine["food_instruction"],
-                            "status": "Pending",
-                            "patient_user_id": selected_patient_id
-                        })
-                    current_date = current_date.fromordinal(current_date.toordinal() + 1)
-            if save_schedule(schedule):
-                total_doses = sum(len(m["doses"]) for m in medicines)
-                st.success(f"Saved patient details and {len(medicines)} medicine(s) with {total_doses} daily dose time(s) for PAT-{selected_patient_id:05d}.")
-            else:
-                st.warning("Patient details saved, but this medicine schedule already exists.")
-
-
-# ==================================================
-# PATIENT PROFILE
-# ==================================================
-
-if page == "__REMOVED_PATIENT_PROFILE__":
-    st.title("👤 Patient Details")
-    st.caption("View and update the personal and medical details of the logged-in patient.")
-
-    user_id = st.session_state.user["id"]
-    existing_profile = get_patient_profile(user_id)
-    profile = dict(existing_profile) if existing_profile else {}
-
-    with st.form("patient_profile_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            full_name = st.text_input("Full Name", value=profile.get("full_name", st.session_state.user.get("full_name", "")))
-            age = st.number_input("Age", min_value=0, max_value=120, value=int(profile.get("age") or 0), step=1)
-            gender_options = ["", "Male", "Female", "Other", "Prefer not to say"]
-            current_gender = profile.get("gender", "")
-            gender = st.selectbox("Gender", gender_options, index=gender_options.index(current_gender) if current_gender in gender_options else 0)
-            blood_options = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
-            current_blood = profile.get("blood_group", "")
-            blood_group = st.selectbox("Blood Group", blood_options, index=blood_options.index(current_blood) if current_blood in blood_options else 0)
-            emergency_contact = st.text_input("Emergency Contact", value=profile.get("emergency_contact", ""))
-        with col2:
-            allergies = st.text_area("Known Allergies", value=profile.get("allergies", ""))
-            medical_conditions = st.text_area("Medical Conditions", value=profile.get("medical_conditions", ""))
-            doctor_name = st.text_input("Doctor Name", value=profile.get("doctor_name", ""))
-            doctor_contact = st.text_input("Doctor Contact", value=profile.get("doctor_contact", ""))
-            additional_notes = st.text_area("Additional Notes", value=profile.get("additional_notes", ""))
-
-        submitted = st.form_submit_button("💾 Save Patient Details", type="primary")
-
-    if submitted:
-        if not full_name.strip():
-            st.error("Full name is required.")
-        else:
-            save_patient_profile(
-                user_id=user_id, full_name=full_name.strip(), age=int(age),
-                gender=gender, blood_group=blood_group,
-                emergency_contact=emergency_contact, allergies=allergies,
-                medical_conditions=medical_conditions, doctor_name=doctor_name,
-                doctor_contact=doctor_contact, additional_notes=additional_notes
-            )
-            st.success("Patient details saved successfully.")
-            st.rerun()
-
-
-# ==================================================
 # PRESCRIPTION SETUP
 # ==================================================
 
-if page == "__REMOVED_PRESCRIPTION_SETUP__":
+if page == "Prescription Setup":
 
     if user_role != "Caregiver":
         st.error("Only caregivers can add or edit prescriptions.")
@@ -1162,10 +932,12 @@ elif page == "Medicine Alarm":
     st.title("🔔 Medicine Alarm")
     st.write("This page uses the prescription schedule set by your caregiver. Keep this page open to receive the alarm.")
 
-    # Manual sound test. Browsers often block automatic audio until the user clicks.
-    st.subheader("🔊 Test Alarm Sound")
-    if st.button("▶️ Test Alarm Sound", key="test_alarm_sound"):
-        render_alarm_sound()
+    if "alarm_audio_enabled" not in st.session_state:
+        st.session_state.alarm_audio_enabled = False
+
+    if st.button("🔓 Enable Chrome Alarm Sound", key="enable_chrome_alarm"):
+        st.session_state.alarm_audio_enabled = True
+        st.success("Alarm sound enabled. Keep this page open.")
 
     # Refresh the patient alarm page every second so caregiver-set times are checked automatically.
     if st_autorefresh is not None:
@@ -1194,7 +966,10 @@ elif page == "Medicine Alarm":
     if due_medicines:
         st.error("🔔 You have medicine reminders requiring attention.")
         st.warning("🔊 Alarm is due. If Chrome blocks autoplay, click Play once in the audio player.")
-        render_alarm_sound()
+        if st.session_state.get("alarm_audio_enabled", False):
+            render_alarm_sound()
+        else:
+            st.warning("Click 🔓 Enable Chrome Alarm Sound once before the scheduled time.")
         for medicine in due_medicines:
             with st.container(border=True):
                 st.subheader(f"💊 {medicine['medicine_name']}")
