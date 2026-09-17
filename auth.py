@@ -36,8 +36,7 @@ def register_user(full_name, username, password, role='Patient'):
         return False, 'Password must contain at least 4 characters.'
     conn = get_auth_connection()
     try:
-        conn.execute('INSERT INTO users (full_name, username, password, role) VALUES (?, ?, ?, ?)',
-                     (full_name, username, hash_password(password), role))
+        conn.execute('INSERT INTO users (full_name, username, password, role) VALUES (?, ?, ?, ?)', (full_name, username, hash_password(password), role))
         conn.commit()
         return True, 'Registration successful.'
     except sqlite3.IntegrityError:
@@ -51,10 +50,8 @@ def register_patient(caregiver_id, full_name, username, password, relationship='
     full_name, username = str(full_name).strip(), str(username).strip().lower()
     conn = get_auth_connection()
     try:
-        conn.execute('''INSERT INTO users
-            (full_name, username, password, role, caregiver_id, relationship)
-            VALUES (?, ?, ?, 'Patient', ?, ?)''',
-            (full_name, username, hash_password(password), caregiver_id, relationship))
+        conn.execute('''INSERT INTO users (full_name, username, password, role, caregiver_id, relationship)
+            VALUES (?, ?, ?, 'Patient', ?, ?)''', (full_name, username, hash_password(password), caregiver_id, relationship))
         conn.commit()
         return True, 'Patient registered successfully.', {'id': conn.execute('SELECT last_insert_rowid()').fetchone()[0]}
     except sqlite3.IntegrityError:
@@ -67,14 +64,10 @@ def register_patient(caregiver_id, full_name, username, password, relationship='
 def login_user(username, password):
     conn = get_auth_connection()
     try:
-        user = conn.execute('SELECT id, full_name, username, password, role, caregiver_id, relationship FROM users WHERE username = ?',
-                            (str(username).strip().lower(),)).fetchone()
+        user = conn.execute('SELECT id, full_name, username, password, role, caregiver_id, relationship FROM users WHERE username = ?', (str(username).strip().lower(),)).fetchone()
         if user is None or user['password'] != hash_password(password):
             return False, 'Invalid username or password.', None
-        return True, 'Login successful.', {
-            'id': user['id'], 'full_name': user['full_name'], 'username': user['username'],
-            'role': user['role'], 'caregiver_id': user['caregiver_id'], 'relationship': user['relationship']
-        }
+        return True, 'Login successful.', {'id': user['id'], 'full_name': user['full_name'], 'username': user['username'], 'role': user['role'], 'caregiver_id': user['caregiver_id'], 'relationship': user['relationship']}
     except Exception as e:
         return False, f'Login error: {e}', None
     finally:
@@ -95,19 +88,13 @@ def check_patient_access(caregiver_id, patient_id):
     finally:
         conn.close()
 
-
 def delete_patient(caregiver_id, patient_id):
-    """Delete a patient only if they belong to the logged-in caregiver."""
     conn = get_auth_connection()
     try:
-        row = conn.execute(
-            "SELECT id, full_name FROM users WHERE id = ? AND caregiver_id = ? AND role = 'Patient'",
-            (patient_id, caregiver_id)
-        ).fetchone()
+        row = conn.execute("SELECT id, full_name FROM users WHERE id = ? AND caregiver_id = ? AND role = 'Patient'", (patient_id, caregiver_id)).fetchone()
         if row is None:
             return False, "Patient not found or access denied."
-        conn.execute("DELETE FROM users WHERE id = ? AND caregiver_id = ? AND role = 'Patient'",
-                     (patient_id, caregiver_id))
+        conn.execute("DELETE FROM users WHERE id = ? AND caregiver_id = ? AND role = 'Patient'", (patient_id, caregiver_id))
         conn.commit()
         return True, f"Patient account '{row['full_name']}' deleted successfully."
     except Exception as e:
