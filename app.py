@@ -972,7 +972,9 @@ elif page == "Dashboard":
 
     st.divider()
 
-    saved_prescriptions = get_saved_prescriptions()
+    saved_prescriptions = get_saved_prescriptions(
+        patient_id=patient_id_for_queries
+    )
 
     st.subheader("Saved Prescriptions")
 
@@ -1093,8 +1095,17 @@ elif page == "Saved Prescriptions":
 elif page == "Today's Medicines":
 
     st.title("📅 Today's Medicines")
+    st.caption("This page refreshes automatically when your caregiver updates your schedule.")
+
+    if st_autorefresh is not None:
+        st_autorefresh(interval=5000, key="todays_medicines_refresh")
+    else:
+        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
+
+    if user_role == "patient":
+        st.caption(f"Synced patient account: PAT-{patient_id_for_queries:05d}")
 
     if not todays_medicines:
 
@@ -1241,6 +1252,11 @@ elif page == "Medicine Chatbot":
 
     st.title("🤖 Medicine Chatbot")
     st.caption("Ask questions about your caregiver-created medicine schedule.")
+
+    if st_autorefresh is not None:
+        st_autorefresh(interval=5000, key="chatbot_medicine_refresh")
+    else:
+        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
     history = get_medication_history(patient_id=patient_id_for_queries)
