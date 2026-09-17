@@ -273,17 +273,40 @@ if page == "Patient & Medicines":
         st.subheader("Create Patient ID")
         with st.form("create_patient_id_form"):
             new_patient_name = st.text_input("Patient name")
-            create_patient_button = st.form_submit_button("➕ Create Patient ID")
+            new_patient_username = st.text_input(
+                "Patient username",
+                placeholder="Example: rahul123"
+            )
+            new_patient_password = st.text_input(
+                "Patient password",
+                type="password",
+                placeholder="Minimum 4 characters"
+            )
+            create_patient_button = st.form_submit_button(
+                "➕ Create Patient ID"
+            )
+
         if create_patient_button:
             if not new_patient_name.strip():
                 st.error("Enter the patient name.")
+            elif not new_patient_username.strip():
+                st.error("Enter a patient username.")
+            elif not new_patient_password:
+                st.error("Enter a patient password.")
+            elif len(new_patient_password) < 4:
+                st.error("Patient password must contain at least 4 characters.")
             else:
-                created, message = register_patient(
+                created, message, patient_data = register_patient(
                     caregiver_id=st.session_state.user["id"],
-                    full_name=new_patient_name.strip()
+                    full_name=new_patient_name.strip(),
+                    username=new_patient_username.strip(),
+                    password=new_patient_password
                 )
                 if created:
-                    st.success(message)
+                    patient_id = patient_data["id"]
+                    st.success(
+                        f"{message} Patient ID: PAT-{patient_id:05d}"
+                    )
                     st.rerun()
                 else:
                     st.error(message)
