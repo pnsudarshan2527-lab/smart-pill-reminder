@@ -234,14 +234,16 @@ if st.sidebar.button("Logout", key="logout_button"):
     st.rerun()
 
 
-user_role = str(st.session_state.user.get("role", "Patient")).strip()
+logged_in_user = st.session_state.get("user") or {}
+user_role = str(logged_in_user.get("role", "Patient")).strip().lower()
+logged_in_user_id = logged_in_user.get("id")
 patient_id_for_queries = (
-    st.session_state.user.get("id")
-    if user_role.lower() == "patient"
+    int(logged_in_user_id)
+    if user_role == "patient" and logged_in_user_id is not None
     else None
 )
 
-if user_role == "Caregiver":
+if user_role == "caregiver":
     navigation_options = [
         "Dashboard",
         "Patient & Medicines",
@@ -262,7 +264,7 @@ else:
 page = st.sidebar.radio("Navigation", navigation_options)
 
 # Patient accounts can never open the caregiver-only page.
-if page == "Patient & Medicines" and user_role.lower() != "caregiver":
+if page == "Patient & Medicines" and user_role != "caregiver":
     st.error("Only caregivers can access Patient & Medicines.")
     st.stop()
 
@@ -818,6 +820,12 @@ if page == "__REMOVED_PRESCRIPTION_SETUP__":
             # SAVE SCHEDULE
             # ==================================================
 
+            # Always attach the schedule to the logged-in patient.
+            # This prevents records with a NULL/wrong patient_user_id.
+            if user_role == "patient" and patient_id_for_queries is not None:
+                for dose in schedule:
+                    dose["patient_user_id"] = patient_id_for_queries
+
             saved_successfully = save_schedule(
                 schedule
             )
@@ -1133,7 +1141,7 @@ elif page == "Today's Medicines":
                     f"{medicine['status']}"
                 )
 
-                if user_role == "Caregiver":
+                if user_role == "caregiver":
                     st.caption("Caregiver controls: update the medicine status.")
                     col1, col2, col3 = st.columns(3)
 
