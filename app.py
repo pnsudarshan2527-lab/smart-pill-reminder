@@ -22,16 +22,19 @@ from database import (
     get_saved_prescriptions,
     delete_prescription,
     update_medication_status,
-    get_medication_summary
+    get_medication_summary,
+    get_patient_profile,
+    save_patient_profile,
+    get_patient_code,
+    delete_patient_data
 )
 
 from auth import (
     initialize_auth_database,
     register_user,
-    register_patient,
     login_user,
+    register_patient,
     get_caregiver_patients,
-    check_patient_access,
     delete_patient
 )
 
@@ -233,10 +236,10 @@ if st.sidebar.button("Logout", key="logout_button"):
 
 user_role = st.session_state.user["role"]
 
-if user_role.lower() == "caregiver":
+if user_role == "Caregiver":
     navigation_options = [
         "Dashboard",
-        "Prescription Setup",
+        "Patient & Medicines",
         "Saved Prescriptions",
         "Today's Medicines",
         "Medication History",
@@ -245,6 +248,7 @@ if user_role.lower() == "caregiver":
 else:
     navigation_options = [
         "Dashboard",
+        "Patient & Medicines",
         "Today's Medicines",
         "Medicine Alarm",
         "Medicine Chatbot",
@@ -255,12 +259,177 @@ page = st.sidebar.radio("Navigation", navigation_options)
 
 
 # ==================================================
+# MERGED PATIENT ID + PATIENT DETAILS + MEDICINE DETAILS
+# ==================================================
+
+if page == "Patient & Medicines":
+    st.title("👤 Patient ID + Patient Details + 💊 Medicine Details")
+    st.caption("Create/select a patient ID and fill patient and medicine details in one place.")
+
+    selected_patient_id = st.session_state.user["id"]
+    selected_patient_name = st.session_state.user.get("full_name", "")
+
+    if user_role == "Caregiver":
+        st.subheader("1. Create Patient ID / Select Patient")
+        with st.expander("➕ Create a new Patient ID", expanded=False):
+            with st.form("create_patient_id_form"):
+                new_patient_name = st.text_input("Patient Full Name")
+                new_patient_username = st.text_input("Patient Username")
+                new_patient_password = st.text_input("Temporary Password", type="password")
+                new_relationship = st.text_input("Relationship", value="Patient")
+                create_patient = st.form_submit_button("Create Patient ID", type="primary")
+            if create_patient:
+                if not new_patient_name.strip() or not new_patient_username.strip() or not new_patient_password:
+                    st.error("Patient name, username and password are required.")
+                else:
+                    ok, message, created = register_patient(
+                        caregiver_id=st.session_state.user["id"],
+                        full_name=new_patient_name,
+                        username=new_patient_username,
+                        password=new_patient_password,
+                        relationship=new_relationship
+                    )
+                    if ok:
+                        st.success(message)
+                        st.info(f"New Patient ID: PAT-{created['id']:05d}")
+                        st.rerun()
+                    else:
+                        st.error(message)
+
+        patients = get_caregiver_patients(st.session_state.user["id"])
+        if not patients:
+            st.warning("Create a patient ID first, then fill the patient and medicine details.")
+            st.stop()
+        patient_options = {f"PAT-{p['id']:05d} — {p['full_name']}": p for p in patients}
+        selected_label = st.selectbox("Select Patient", list(patient_options.keys()))
+        selected_patient = patient_options[selected_label]
+        selected_patient_id = selected_patient["id"]
+        selected_patient_name = selected_patient["full_name"]
+        st.success(f"Selected Patient ID: PAT-{selected_patient_id:05d}")
+
+        with st.expander("🗑️ Delete this Patient ID", expanded=False):
+            st.warning("Deleting this patient will permanently remove the patient account, patient details, and medicine schedules.")
+            confirm_delete = st.checkbox("I understand that this action cannot be undone.", key=f"confirm_delete_{selected_patient_id}")
+            if st.button("Delete Patient ID", type="secondary", key=f"delete_patient_{selected_patient_id}"):
+                if not confirm_delete:
+                    st.error("Please confirm deletion first.")
+                else:
+                    deleted, delete_message = delete_patient(
+                        caregiver_id=st.session_state.user["id"],
+                        patient_id=selected_patient_id
+                    )
+                    if deleted:
+                        delete_patient_data(selected_patient_id)
+                        st.success(delete_message)
+                        st.rerun()
+                    else:
+                        st.error(delete_message)
+
+    existing_profile = get_patient_profile(selected_patient_id)
+    profile = dict(existing_profile) if existing_profile else {}
+    gender_options = ["", "Male", "Female", "Other", "Prefer not to say"]
+    blood_options = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+
+    with st.form("merged_patient_medicine_form"):
+        st.header("2. Patient Details")
+        c1, c2 = st.columns(2)
+        with c1:
+            full_name = st.text_input("Full Name", value=profile.get("full_name", selected_patient_name))
+            age = st.number_input("Age", min_value=0, max_value=120, value=int(profile.get("age") or 0), step=1)
+            gender = st.selectbox("Gender", gender_options, index=gender_options.index(profile.get("gender", "")) if profile.get("gender", "") in gender_options else 0)
+            blood_group = st.selectbox("Blood Group", blood_options, index=blood_options.index(profile.get("blood_group", "")) if profile.get("blood_group", "") in blood_options else 0)
+            emergency_contact = st.text_input("Emergency Contact", value=profile.get("emergency_contact", ""))
+        with c2:
+            allergies = st.text_area("Known Allergies", value=profile.get("allergies", ""))
+            medical_conditions = st.text_area("Medical Conditions", value=profile.get("medical_conditions", ""))
+            doctor_name = st.text_input("Doctor Name", value=profile.get("doctor_name", ""))
+            doctor_contact = st.text_input("Doctor Contact", value=profile.get("doctor_contact", ""))
+            additional_notes = st.text_area("Additional Notes", value=profile.get("additional_notes", ""))
+
+        st.header("3. Medicine Details")
+        medicine_name = st.text_input("Medicine Name", placeholder="Example: Paracetamol")
+        dosage = st.text_input("Dosage", placeholder="Example: 500 mg")
+        start_date = st.date_input("Start Date", value=date.today())
+        end_date = st.date_input("End Date", value=date.today())
+        dose_time = st.time_input("Medicine Time", value=time(8, 0))
+        food_instruction = st.selectbox("Food Instruction", ["After food", "Before food", "With food", "Anytime"])
+        submitted = st.form_submit_button("💾 Save Patient + Medicine Details", type="primary")
+
+    if submitted:
+        if not full_name.strip():
+            st.error("Full name is required.")
+        elif not medicine_name.strip() or not dosage.strip():
+            st.error("Medicine name and dosage are required.")
+        elif end_date < start_date:
+            st.error("End date cannot be before start date.")
+        else:
+            save_patient_profile(selected_patient_id, full_name.strip(), int(age), gender, blood_group, emergency_contact, allergies, medical_conditions, doctor_name, doctor_contact, additional_notes)
+            schedule = []
+            current_date = start_date
+            while current_date <= end_date:
+                schedule.append({"medicine_name": medicine_name.strip(), "dosage": dosage.strip(), "date": current_date, "time": dose_time, "food_instruction": food_instruction, "status": "Pending", "patient_user_id": selected_patient_id})
+                current_date = current_date.fromordinal(current_date.toordinal() + 1)
+            if save_schedule(schedule):
+                st.success(f"Saved successfully for Patient ID PAT-{selected_patient_id:05d}.")
+            else:
+                st.warning("Patient details saved, but this medicine schedule already exists.")
+
+
+# ==================================================
+# PATIENT PROFILE
+# ==================================================
+
+if page == "__REMOVED_PATIENT_PROFILE__":
+    st.title("👤 Patient Details")
+    st.caption("View and update the personal and medical details of the logged-in patient.")
+
+    user_id = st.session_state.user["id"]
+    existing_profile = get_patient_profile(user_id)
+    profile = dict(existing_profile) if existing_profile else {}
+
+    with st.form("patient_profile_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            full_name = st.text_input("Full Name", value=profile.get("full_name", st.session_state.user.get("full_name", "")))
+            age = st.number_input("Age", min_value=0, max_value=120, value=int(profile.get("age") or 0), step=1)
+            gender_options = ["", "Male", "Female", "Other", "Prefer not to say"]
+            current_gender = profile.get("gender", "")
+            gender = st.selectbox("Gender", gender_options, index=gender_options.index(current_gender) if current_gender in gender_options else 0)
+            blood_options = ["", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+            current_blood = profile.get("blood_group", "")
+            blood_group = st.selectbox("Blood Group", blood_options, index=blood_options.index(current_blood) if current_blood in blood_options else 0)
+            emergency_contact = st.text_input("Emergency Contact", value=profile.get("emergency_contact", ""))
+        with col2:
+            allergies = st.text_area("Known Allergies", value=profile.get("allergies", ""))
+            medical_conditions = st.text_area("Medical Conditions", value=profile.get("medical_conditions", ""))
+            doctor_name = st.text_input("Doctor Name", value=profile.get("doctor_name", ""))
+            doctor_contact = st.text_input("Doctor Contact", value=profile.get("doctor_contact", ""))
+            additional_notes = st.text_area("Additional Notes", value=profile.get("additional_notes", ""))
+
+        submitted = st.form_submit_button("💾 Save Patient Details", type="primary")
+
+    if submitted:
+        if not full_name.strip():
+            st.error("Full name is required.")
+        else:
+            save_patient_profile(
+                user_id=user_id, full_name=full_name.strip(), age=int(age),
+                gender=gender, blood_group=blood_group,
+                emergency_contact=emergency_contact, allergies=allergies,
+                medical_conditions=medical_conditions, doctor_name=doctor_name,
+                doctor_contact=doctor_contact, additional_notes=additional_notes
+            )
+            st.success("Patient details saved successfully.")
+            st.rerun()
+
+
+# ==================================================
 # PRESCRIPTION SETUP
 # ==================================================
 
-if page == "Prescription Setup":
+if page == "__REMOVED_PRESCRIPTION_SETUP__":
 
-    if user_role.lower() != "caregiver":
+    if user_role != "Caregiver":
         st.error("Only caregivers can add or edit prescriptions.")
         st.stop()
 
@@ -883,7 +1052,7 @@ elif page == "Today's Medicines":
                     f"{medicine['status']}"
                 )
 
-                if user_role.lower() == "caregiver":
+                if user_role == "Caregiver":
                     st.caption("Caregiver controls: update the medicine status.")
                     col1, col2, col3 = st.columns(3)
 
@@ -1102,65 +1271,11 @@ elif page == "Medication History":
 
 elif page == "Caregiver Dashboard":
 
-    if user_role.lower() != "caregiver":
+    if user_role != "Caregiver":
         st.error("This dashboard is available only to caregivers.")
         st.stop()
 
     st.title("👨‍👩‍👧 Caregiver Dashboard")
-
-    caregiver_id = st.session_state.user["id"]
-    patients = get_caregiver_patients(caregiver_id)
-
-    st.subheader("Manage Patients")
-    with st.expander("➕ Add a new patient", expanded=not bool(patients)):
-        with st.form("add_patient_form"):
-            patient_name = st.text_input("Patient full name")
-            patient_username = st.text_input("Patient username")
-            patient_password = st.text_input("Temporary password", type="password")
-            relationship = st.selectbox("Relationship", ["Parent", "Spouse", "Child", "Sibling", "Relative", "Other"])
-            add_patient = st.form_submit_button("Add Patient")
-
-            if add_patient:
-                if not patient_name or not patient_username or not patient_password:
-                    st.error("Please fill in all patient fields.")
-                else:
-                    ok, msg, _ = register_patient(
-                        caregiver_id=caregiver_id,
-                        full_name=patient_name,
-                        username=patient_username,
-                        password=patient_password,
-                        relationship=relationship
-                    )
-                    if ok:
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-
-    if patients:
-        patient_options = {
-            f"{p['full_name']} ({p['username']})": p for p in patients
-        }
-        selected_label = st.selectbox("Select patient", list(patient_options.keys()))
-        selected_patient = patient_options[selected_label]
-        st.session_state.selected_patient = selected_patient
-        st.info(f"Currently viewing: **{selected_patient['full_name']}** | Relationship: {selected_patient.get('relationship', 'Patient')}")
-
-        st.warning("Deleting a patient permanently removes their login account. This action cannot be undone.")
-        confirm_delete = st.checkbox(
-            f"I confirm that I want to delete {selected_patient['full_name']}'s account",
-            key=f"confirm_delete_{selected_patient['id']}"
-        )
-        if st.button("🗑️ Delete Selected Patient", type="secondary", disabled=not confirm_delete):
-            deleted, delete_message = delete_patient(caregiver_id, selected_patient['id'])
-            if deleted:
-                st.session_state.pop("selected_patient", None)
-                st.success(delete_message)
-                st.rerun()
-            else:
-                st.error(delete_message)
-    else:
-        st.warning("No patients linked yet. Add your first patient above.")
 
     summary = get_medication_summary()
 
