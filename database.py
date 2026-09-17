@@ -51,7 +51,6 @@ def initialize_database():
     medication_columns = {row[1] for row in cursor.fetchall()}
     if "patient_user_id" not in medication_columns:
         cursor.execute("ALTER TABLE medication_schedule ADD COLUMN patient_user_id INTEGER")
-
     cursor.execute("PRAGMA table_info(patient_profile)")
     profile_columns = {row[1] for row in cursor.fetchall()}
     if "patient_code" not in profile_columns:
@@ -59,7 +58,6 @@ def initialize_database():
     cursor.execute("SELECT id, user_id FROM patient_profile WHERE patient_code IS NULL OR patient_code = ''")
     for row in cursor.fetchall():
         cursor.execute("UPDATE patient_profile SET patient_code=? WHERE id=?", (f"PAT-{row[1]:05d}", row[0]))
-
     cursor.execute("PRAGMA table_info(medication_schedule)")
     columns = {row[1] for row in cursor.fetchall()}
     if "schedule_group_id" not in columns:
@@ -96,29 +94,43 @@ def save_schedule(schedule):
     return True
 
 
-def get_todays_medicines():
+def get_todays_medicines(patient_id=None, caregiver_id=None):
     connection = get_connection()
-    rows = connection.execute("SELECT * FROM medication_schedule WHERE date=? ORDER BY time ASC", (str(date.today()),)).fetchall()
+    query = "SELECT * FROM medication_schedule WHERE date=?"
+    params = [str(date.today())]
+    if patient_id is not None:
+        query += " AND patient_user_id=?"
+        params.append(patient_id)
+    query += " ORDER BY time ASC"
+    rows = connection.execute(query, params).fetchall()
     connection.close()
     return rows
 
 
-def get_medication_history():
+def get_medication_history(patient_id=None, caregiver_id=None):
     connection = get_connection()
-    rows = connection.execute("SELECT * FROM medication_schedule ORDER BY date DESC, time DESC").fetchall()
+    query = "SELECT * FROM medication_schedule"
+    params = []
+    if patient_id is not None:
+        query += " WHERE patient_user_id=?"
+        params.append(patient_id)
+    query += " ORDER BY date DESC, time DESC"
+    rows = connection.execute(query, params).fetchall()
     connection.close()
     return rows
 
 
-def get_saved_prescriptions():
+def get_saved_prescriptions(patient_id=None, caregiver_id=None):
     connection = get_connection()
-    rows = connection.execute('''
-        SELECT schedule_group_id, medicine_name, dosage,
+    query = '''SELECT schedule_group_id, medicine_name, dosage,
                MIN(date) AS start_date, MAX(date) AS end_date, COUNT(*) AS total_doses
-        FROM medication_schedule
-        GROUP BY schedule_group_id, medicine_name, dosage
-        ORDER BY start_date DESC
-    ''').fetchall()
+               FROM medication_schedule'''
+    params = []
+    if patient_id is not None:
+        query += " WHERE patient_user_id=?"
+        params.append(patient_id)
+    query += " GROUP BY schedule_group_id, medicine_name, dosage ORDER BY start_date DESC"
+    rows = connection.execute(query, params).fetchall()
     connection.close()
     return rows
 
@@ -140,16 +152,19 @@ def update_medication_status(medication_id, new_status):
     connection.close()
 
 
-def get_medication_summary():
+def get_medication_summary(patient_id=None, caregiver_id=None):
     connection = get_connection()
-    row = connection.execute('''
-        SELECT COUNT(*) AS total_doses,
+    query = '''SELECT COUNT(*) AS total_doses,
                SUM(CASE WHEN status='Taken' THEN 1 ELSE 0 END) AS taken_doses,
                SUM(CASE WHEN status='Skipped' THEN 1 ELSE 0 END) AS skipped_doses,
                SUM(CASE WHEN status='Missed' THEN 1 ELSE 0 END) AS missed_doses,
                SUM(CASE WHEN status='Snoozed' THEN 1 ELSE 0 END) AS snoozed_doses
-        FROM medication_schedule
-    ''').fetchone()
+               FROM medication_schedule'''
+    params = []
+    if patient_id is not None:
+        query += " WHERE patient_user_id=?"
+        params.append(patient_id)
+    row = connection.execute(query, params).fetchone()
     connection.close()
     return row
 
@@ -189,7 +204,6 @@ def save_patient_profile(user_id, full_name, age, gender, blood_group, emergency
 
 
 def delete_patient_data(user_id):
-    """Delete all local profile and medicine data belonging to a patient."""
     connection = get_connection()
     try:
         connection.execute("DELETE FROM medication_schedule WHERE patient_user_id=?", (user_id,))
