@@ -234,16 +234,16 @@ if st.sidebar.button("Logout", key="logout_button"):
     st.rerun()
 
 
-logged_in_user = st.session_state.get("user") or {}
-user_role = str(logged_in_user.get("role", "Patient")).strip().lower()
-logged_in_user_id = logged_in_user.get("id")
+user_role = str(st.session_state.user.get("role", "Patient")).strip()
+
+# Always use the logged-in patient ID on patient-facing medicine pages.
 patient_id_for_queries = (
-    int(logged_in_user_id)
-    if user_role == "patient" and logged_in_user_id is not None
+    int(st.session_state.user["id"])
+    if user_role.lower() == "patient"
     else None
 )
 
-if user_role == "caregiver":
+if user_role == "Caregiver":
     navigation_options = [
         "Dashboard",
         "Patient & Medicines",
@@ -255,6 +255,7 @@ if user_role == "caregiver":
 else:
     navigation_options = [
         "Dashboard",
+        "Patient & Medicines",
         "Today's Medicines",
         "Medicine Alarm",
         "Medicine Chatbot",
@@ -262,11 +263,6 @@ else:
     ]
 
 page = st.sidebar.radio("Navigation", navigation_options)
-
-# Patient accounts can never open the caregiver-only page.
-if page == "Patient & Medicines" and user_role != "caregiver":
-    st.error("Only caregivers can access Patient & Medicines.")
-    st.stop()
 
 
 # ==================================================
@@ -820,12 +816,6 @@ if page == "__REMOVED_PRESCRIPTION_SETUP__":
             # SAVE SCHEDULE
             # ==================================================
 
-            # Always attach the schedule to the logged-in patient.
-            # This prevents records with a NULL/wrong patient_user_id.
-            if user_role == "patient" and patient_id_for_queries is not None:
-                for dose in schedule:
-                    dose["patient_user_id"] = patient_id_for_queries
-
             saved_successfully = save_schedule(
                 schedule
             )
@@ -972,9 +962,7 @@ elif page == "Dashboard":
 
     st.divider()
 
-    saved_prescriptions = get_saved_prescriptions(
-        patient_id=patient_id_for_queries
-    )
+    saved_prescriptions = get_saved_prescriptions()
 
     st.subheader("Saved Prescriptions")
 
@@ -1095,17 +1083,11 @@ elif page == "Saved Prescriptions":
 elif page == "Today's Medicines":
 
     st.title("📅 Today's Medicines")
-    st.caption("This page refreshes automatically when your caregiver updates your schedule.")
 
     if st_autorefresh is not None:
         st_autorefresh(interval=5000, key="todays_medicines_refresh")
-    else:
-        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
-
-    if user_role == "patient":
-        st.caption(f"Synced patient account: PAT-{patient_id_for_queries:05d}")
 
     if not todays_medicines:
 
@@ -1152,7 +1134,7 @@ elif page == "Today's Medicines":
                     f"{medicine['status']}"
                 )
 
-                if user_role == "caregiver":
+                if user_role == "Caregiver":
                     st.caption("Caregiver controls: update the medicine status.")
                     col1, col2, col3 = st.columns(3)
 
@@ -1252,11 +1234,6 @@ elif page == "Medicine Chatbot":
 
     st.title("🤖 Medicine Chatbot")
     st.caption("Ask questions about your caregiver-created medicine schedule.")
-
-    if st_autorefresh is not None:
-        st_autorefresh(interval=5000, key="chatbot_medicine_refresh")
-    else:
-        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines(patient_id=patient_id_for_queries)
     history = get_medication_history(patient_id=patient_id_for_queries)
