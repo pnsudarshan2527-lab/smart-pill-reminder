@@ -246,9 +246,9 @@ if user_role == "Caregiver":
         "Caregiver Dashboard"
     ]
 else:
+    # Patients should not see caregiver-only pages
     navigation_options = [
         "Dashboard",
-        "Patient & Medicines",
         "Today's Medicines",
         "Medicine Alarm",
         "Medicine Chatbot",
@@ -263,6 +263,12 @@ page = st.sidebar.radio("Navigation", navigation_options)
 # ==================================================
 
 if page == "Patient & Medicines":
+    # Extra permission check in case the page is opened through a stale session
+    # or a previously selected navigation value.
+    if str(st.session_state.user.get("role", "Patient")).strip().lower() != "caregiver":
+        st.error("Only caregivers can access Patient & Medicines.")
+        st.stop()
+
     st.title("💊 Patient & Medicines")
     st.caption("Create/select a Patient ID and save patient details with multiple medicines in one form.")
 
@@ -1076,12 +1082,6 @@ elif page == "Saved Prescriptions":
 elif page == "Today's Medicines":
 
     st.title("📅 Today's Medicines")
-    st.caption("Keep this page open to see medicine reminders automatically.")
-
-    if st_autorefresh is not None:
-        st_autorefresh(interval=1000, key="todays_medicines_refresh")
-    else:
-        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines()
 
