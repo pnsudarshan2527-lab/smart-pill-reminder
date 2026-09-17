@@ -43,41 +43,110 @@ from auth import (
 # ==================================================
 
 def render_alarm_sound():
-    """Render a repeating alarm sound in the browser."""
-    sample_rate = 44100
-    duration = 0.6
-    frames = []
+    """
+    Browser-safe alarm.
+    User must click Start Alarm because browsers block automatic sound.
+    """
 
-    for i in range(int(sample_rate * duration)):
-        t = i / sample_rate
-        # Two-tone beep for a clear reminder sound
-        frequency = 880 if int(t * 4) % 2 == 0 else 660
-        value = int(15000 * math.sin(2 * math.pi * frequency * t))
-        frames.append(value)
-
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(b"".join(int(x).to_bytes(2, byteorder="little", signed=True) for x in frames))
-
-    audio_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
     components.html(
-        f"""
-        <audio autoplay loop controls style="width:100%;">
-            <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
-        </audio>
-        <script>
-            const audio = document.querySelector('audio');
-            audio.volume = 1.0;
-            audio.play().catch(() => {{
-                document.body.insertAdjacentHTML('beforeend',
-                    '<p style=\"color:#b45309;font-size:13px;\">Click Play if your browser blocks automatic sound.</p>');
-            }});
-        </script>
+        """
+        <div style="font-family:Arial; padding:12px; border:1px solid #ef4444;
+                    border-radius:10px; background:#fff1f2;">
+
+            <h3 style="color:#b91c1c;">🔔 Medicine Alarm</h3>
+
+            <p style="color:#7f1d1d;">
+                Click the button below to start the alarm sound.
+            </p>
+
+            <button id="startAlarm"
+                    style="background:#dc2626;color:white;border:none;
+                           padding:12px 20px;border-radius:8px;
+                           font-size:16px;cursor:pointer;">
+                🔊 Start Alarm
+            </button>
+
+            <button id="stopAlarm"
+                    style="background:#374151;color:white;border:none;
+                           padding:12px 20px;border-radius:8px;
+                           font-size:16px;cursor:pointer;margin-left:8px;">
+                🔇 Stop Alarm
+            </button>
+
+            <p id="alarmStatus" style="font-weight:bold;"></p>
+
+            <script>
+                let audioContext = null;
+                let alarmTimer = null;
+
+                function beep() {
+                    if (!audioContext) {
+                        audioContext = new (
+                            window.AudioContext ||
+                            window.webkitAudioContext
+                        )();
+                    }
+
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.type = "square";
+                    oscillator.frequency.setValueAtTime(
+                        880,
+                        audioContext.currentTime
+                    );
+
+                    gainNode.gain.setValueAtTime(
+                        0.25,
+                        audioContext.currentTime
+                    );
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    oscillator.start();
+
+                    oscillator.stop(
+                        audioContext.currentTime + 0.35
+                    );
+                }
+
+                document.getElementById("startAlarm")
+                    .addEventListener("click", async function() {
+                        if (!audioContext) {
+                            audioContext = new (
+                                window.AudioContext ||
+                                window.webkitAudioContext
+                            )();
+                        }
+
+                        if (audioContext.state === "suspended") {
+                            await audioContext.resume();
+                        }
+
+                        if (!alarmTimer) {
+                            beep();
+                            alarmTimer = setInterval(beep, 1000);
+                        }
+
+                        document.getElementById("alarmStatus").innerText =
+                            "Alarm is ringing.";
+                    });
+
+                document.getElementById("stopAlarm")
+                    .addEventListener("click", function() {
+                        if (alarmTimer) {
+                            clearInterval(alarmTimer);
+                            alarmTimer = null;
+                        }
+
+                        document.getElementById("alarmStatus").innerText =
+                            "Alarm stopped.";
+                    });
+            </script>
+        </div>
         """,
-        height=80,
+        height=230
     )
 
 
@@ -1179,9 +1248,9 @@ elif page == "Medicine Alarm":
         except (KeyError, ValueError, TypeError):
             continue
 
-    if due_medicines:
-        st.error("🔔 You have medicine reminders requiring attention.")
-        st.warning("🔊 Alarm is due. If Chrome blocks autoplay, click Play once in the audio player.")
+ if due_medicines:
+    st.error("🔔 You have medicine reminders requiring attention.")
+    st.warning("🔊 Click Start Alarm below to hear the sound.")
         render_alarm_sound()
         for medicine in due_medicines:
             with st.container(border=True):
