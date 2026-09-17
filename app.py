@@ -1162,6 +1162,11 @@ elif page == "Medicine Alarm":
     st.title("🔔 Medicine Alarm")
     st.write("This page uses the prescription schedule set by your caregiver. Keep this page open to receive the alarm.")
 
+    # Manual sound test. Browsers often block automatic audio until the user clicks.
+    st.subheader("🔊 Test Alarm Sound")
+    if st.button("▶️ Test Alarm Sound", key="test_alarm_sound"):
+        render_alarm_sound()
+
     # Refresh the patient alarm page every second so caregiver-set times are checked automatically.
     if st_autorefresh is not None:
         st_autorefresh(interval=1000, key="patient_alarm_refresh")
