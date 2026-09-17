@@ -43,110 +43,41 @@ from auth import (
 # ==================================================
 
 def render_alarm_sound():
-    """
-    Browser-safe alarm.
-    User must click Start Alarm because browsers block automatic sound.
-    """
+    """Render a repeating alarm sound in the browser."""
+    sample_rate = 44100
+    duration = 0.6
+    frames = []
 
+    for i in range(int(sample_rate * duration)):
+        t = i / sample_rate
+        # Two-tone beep for a clear reminder sound
+        frequency = 880 if int(t * 4) % 2 == 0 else 660
+        value = int(15000 * math.sin(2 * math.pi * frequency * t))
+        frames.append(value)
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"".join(int(x).to_bytes(2, byteorder="little", signed=True) for x in frames))
+
+    audio_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
     components.html(
-        """
-        <div style="font-family:Arial; padding:12px; border:1px solid #ef4444;
-                    border-radius:10px; background:#fff1f2;">
-
-            <h3 style="color:#b91c1c;">🔔 Medicine Alarm</h3>
-
-            <p style="color:#7f1d1d;">
-                Click the button below to start the alarm sound.
-            </p>
-
-            <button id="startAlarm"
-                    style="background:#dc2626;color:white;border:none;
-                           padding:12px 20px;border-radius:8px;
-                           font-size:16px;cursor:pointer;">
-                🔊 Start Alarm
-            </button>
-
-            <button id="stopAlarm"
-                    style="background:#374151;color:white;border:none;
-                           padding:12px 20px;border-radius:8px;
-                           font-size:16px;cursor:pointer;margin-left:8px;">
-                🔇 Stop Alarm
-            </button>
-
-            <p id="alarmStatus" style="font-weight:bold;"></p>
-
-            <script>
-                let audioContext = null;
-                let alarmTimer = null;
-
-                function beep() {
-                    if (!audioContext) {
-                        audioContext = new (
-                            window.AudioContext ||
-                            window.webkitAudioContext
-                        )();
-                    }
-
-                    const oscillator = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-
-                    oscillator.type = "square";
-                    oscillator.frequency.setValueAtTime(
-                        880,
-                        audioContext.currentTime
-                    );
-
-                    gainNode.gain.setValueAtTime(
-                        0.25,
-                        audioContext.currentTime
-                    );
-
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-
-                    oscillator.start();
-
-                    oscillator.stop(
-                        audioContext.currentTime + 0.35
-                    );
-                }
-
-                document.getElementById("startAlarm")
-                    .addEventListener("click", async function() {
-                        if (!audioContext) {
-                            audioContext = new (
-                                window.AudioContext ||
-                                window.webkitAudioContext
-                            )();
-                        }
-
-                        if (audioContext.state === "suspended") {
-                            await audioContext.resume();
-                        }
-
-                        if (!alarmTimer) {
-                            beep();
-                            alarmTimer = setInterval(beep, 1000);
-                        }
-
-                        document.getElementById("alarmStatus").innerText =
-                            "Alarm is ringing.";
-                    });
-
-                document.getElementById("stopAlarm")
-                    .addEventListener("click", function() {
-                        if (alarmTimer) {
-                            clearInterval(alarmTimer);
-                            alarmTimer = null;
-                        }
-
-                        document.getElementById("alarmStatus").innerText =
-                            "Alarm stopped.";
-                    });
-            </script>
-        </div>
+        f"""
+        <audio autoplay loop controls style="width:100%;">
+            <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
+        </audio>
+        <script>
+            const audio = document.querySelector('audio');
+            audio.volume = 1.0;
+            audio.play().catch(() => {{
+                document.body.insertAdjacentHTML('beforeend',
+                    '<p style=\"color:#b45309;font-size:13px;\">Click Play if your browser blocks automatic sound.</p>');
+            }});
+        </script>
         """,
-        height=230
+        height=80,
     )
 
 
@@ -342,40 +273,17 @@ if page == "Patient & Medicines":
         st.subheader("Create Patient ID")
         with st.form("create_patient_id_form"):
             new_patient_name = st.text_input("Patient name")
-            new_patient_username = st.text_input(
-                "Patient username",
-                placeholder="Example: rahul123"
-            )
-            new_patient_password = st.text_input(
-                "Patient password",
-                type="password",
-                placeholder="Minimum 4 characters"
-            )
-            create_patient_button = st.form_submit_button(
-                "➕ Create Patient ID"
-            )
-
+            create_patient_button = st.form_submit_button("➕ Create Patient ID")
         if create_patient_button:
             if not new_patient_name.strip():
                 st.error("Enter the patient name.")
-            elif not new_patient_username.strip():
-                st.error("Enter a patient username.")
-            elif not new_patient_password:
-                st.error("Enter a patient password.")
-            elif len(new_patient_password) < 4:
-                st.error("Patient password must contain at least 4 characters.")
             else:
-                created, message, patient_data = register_patient(
+                created, message = register_patient(
                     caregiver_id=st.session_state.user["id"],
-                    full_name=new_patient_name.strip(),
-                    username=new_patient_username.strip(),
-                    password=new_patient_password
+                    full_name=new_patient_name.strip()
                 )
                 if created:
-                    patient_id = patient_data["id"]
-                    st.success(
-                        f"{message} Patient ID: PAT-{patient_id:05d}"
-                    )
+                    st.success(message)
                     st.rerun()
                 else:
                     st.error(message)
@@ -1240,22 +1148,20 @@ elif page == "Medicine Alarm":
         try:
             medicine_time = datetime.strptime(medicine["time"], "%H:%M:%S").time()
             scheduled_datetime = datetime.combine(date.today(), medicine_time)
-               if medicine["status"] not in ["Taken", "Skipped"]:
-            if scheduled_datetime <= now:
-                due_medicines.append(medicine)
-            else:
-                upcoming_medicines.append(medicine)
+            if medicine["status"] not in ["Taken", "Skipped"]:
+                if scheduled_datetime <= now:
+                    due_medicines.append(medicine)
+                else:
+                    upcoming_medicines.append(medicine)
+        except (KeyError, ValueError, TypeError):
+            continue
 
-    except (KeyError, ValueError, TypeError):
-        continue
-
-if due_medicines:
-    st.error("🔔 You have medicine reminders requiring attention.")
-    st.warning("🔊 Alarm is due. If Chrome blocks autoplay, click Play once in the audio player.")
-    render_alarm_sound()
-
-    for medicine in due_medicines:
-        with st.container(border=True):
+    if due_medicines:
+        st.error("🔔 You have medicine reminders requiring attention.")
+        st.warning("🔊 Alarm is due. If Chrome blocks autoplay, click Play once in the audio player.")
+        render_alarm_sound()
+        for medicine in due_medicines:
+            with st.container(border=True):
                 st.subheader(f"💊 {medicine['medicine_name']}")
                 st.write(f"**Dosage:** {medicine['dosage']}")
                 st.write(f"**Scheduled time:** {datetime.strptime(medicine['time'], '%H:%M:%S').strftime('%I:%M %p')}")
