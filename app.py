@@ -1240,20 +1240,22 @@ elif page == "Medicine Alarm":
         try:
             medicine_time = datetime.strptime(medicine["time"], "%H:%M:%S").time()
             scheduled_datetime = datetime.combine(date.today(), medicine_time)
-            if medicine["status"] not in ["Taken", "Skipped"]:
-                if scheduled_datetime <= now:
-                    due_medicines.append(medicine)
-                else:
-                    upcoming_medicines.append(medicine)
-        except (KeyError, ValueError, TypeError):
-            continue
+               if medicine["status"] not in ["Taken", "Skipped"]:
+            if scheduled_datetime <= now:
+                due_medicines.append(medicine)
+            else:
+                upcoming_medicines.append(medicine)
 
- if due_medicines:
+    except (KeyError, ValueError, TypeError):
+        continue
+
+if due_medicines:
     st.error("🔔 You have medicine reminders requiring attention.")
-    st.warning("🔊 Click Start Alarm below to hear the sound.")
-        render_alarm_sound()
-        for medicine in due_medicines:
-            with st.container(border=True):
+    st.warning("🔊 Alarm is due. If Chrome blocks autoplay, click Play once in the audio player.")
+    render_alarm_sound()
+
+    for medicine in due_medicines:
+        with st.container(border=True):
                 st.subheader(f"💊 {medicine['medicine_name']}")
                 st.write(f"**Dosage:** {medicine['dosage']}")
                 st.write(f"**Scheduled time:** {datetime.strptime(medicine['time'], '%H:%M:%S').strftime('%I:%M %p')}")
