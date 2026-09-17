@@ -1076,6 +1076,12 @@ elif page == "Saved Prescriptions":
 elif page == "Today's Medicines":
 
     st.title("📅 Today's Medicines")
+    st.caption("Keep this page open to see medicine reminders automatically.")
+
+    if st_autorefresh is not None:
+        st_autorefresh(interval=1000, key="todays_medicines_refresh")
+    else:
+        st.warning("Install streamlit-autorefresh: pip install streamlit-autorefresh")
 
     todays_medicines = get_todays_medicines()
 
